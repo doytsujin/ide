@@ -25,9 +25,9 @@ use nalgebra::Vector3;
 
 
 
-// =======================
-// === RenderedContent ===
-// =======================
+// ========================
+// === TextFieldSprites ===
+// ========================
 
 /// Alias for line of glyph sprites. This is for distinct `glyph::system::Line` type from glyph
 /// system.from `text_field::content::line::Line` being a whole line of text in Text Field content.
@@ -59,8 +59,8 @@ pub struct TextFieldSprites {
     pub assignment: GlyphLinesAssignment,
     /// line height in pixels.
     pub line_height: f32,
-    /// Display object of the whole rendered content.
-    pub display_object: DisplayObjectData,
+    /// The scroll offset from the last scroll update.
+    pub last_scroll_offset: Option<Vector2<f32>>,
 }
 
 
@@ -69,19 +69,20 @@ pub struct TextFieldSprites {
 impl TextFieldSprites {
 
     /// Create RenderedContent structure.
-    pub fn new(world:&World, properties:&TextFieldProperties) -> Self {
-        let font              = properties.font.clone_ref();
-        let line_height       = properties.text_size;
-        let window_size       = properties.size;
-        let color             = properties.base_color;
-        let cursor_system     = Self::create_cursor_system(world,line_height);
-        let selection_system  = Self::create_selection_system(world);
-        let cursors           = Vec::new();
-        let mut glyph_system  = GlyphSystem::new(world,font.clone_ref());
-        let display_object    = DisplayObjectData::new(Logger::new("RenderedContent"));
-        display_object.add_child(&selection_system);
-        display_object.add_child(&glyph_system);
-        display_object.add_child(&cursor_system);
+    pub fn new(world:&World, parent:&DisplayObjectData, properties:&TextFieldProperties)
+    -> Self {
+        let font               = properties.font.clone_ref();
+        let line_height        = properties.text_size;
+        let window_size        = properties.size;
+        let color              = properties.base_color;
+        let last_scroll_offset = None;
+        let cursor_system      = Self::create_cursor_system(world,line_height);
+        let selection_system   = Self::create_selection_system(world);
+        let cursors            = Vec::new();
+        let mut glyph_system   = GlyphSystem::new(world,font.clone_ref());
+        parent.add_child(&selection_system);
+        parent.add_child(&glyph_system);
+        parent.add_child(&cursor_system);
 
         let assignment        = Self::create_assignment_structure(window_size,line_height,font);
         let glyph_lines_count = assignment.glyph_lines_count();
@@ -93,7 +94,7 @@ impl TextFieldSprites {
             glyph_system.new_empty_line(bsl_start,line_height,length,color)
         }).collect();
         TextFieldSprites {glyph_system,cursor_system,selection_system,glyph_lines,cursors,
-            line_height,display_object,assignment}
+            line_height,assignment,last_scroll_offset}
     }
 
     fn create_cursor_system(world:&World,line_height:f32) -> ShapeSystem {
@@ -131,37 +132,26 @@ impl TextFieldSprites {
 }
 
 
-// === DisplayObject ===
-
-impl From<&TextFieldSprites> for DisplayObjectData {
-    fn from(rendered_content:&TextFieldSprites) -> Self {
-        rendered_content.display_object.clone_ref()
-    }
-}
-
-
 // === Update ===
 
 impl TextFieldSprites {
     /// Update scroll position of displayed text.
     pub fn update_scroll
     (&mut self, scroll_offset:Vector2<f32>, content:&mut TextFieldContent, view_size:Vector2<f32>) {
-        let assignment           = &mut self.assignment;
-        let old_scroll_offset    = -self.display_object.position().xy();
-        let scroll_offset_change = scroll_offset - old_scroll_offset;
-        let new_position         = Vector3::new(scroll_offset.x,scroll_offset.y,0.0);
+        let assignment    = &mut self.assignment;
+        let scroll_change = self.last_scroll_offset.map(|last| scroll_offset - last);
+
 
         let mut update = GlyphLinesAssignmentUpdate {assignment,content,view_size,scroll_offset};
-        if scroll_offset_change.x != 0.0 {
-            update.update_after_x_scroll(scroll_offset_change.x);
+        if scroll_change.map_or(false, |scroll| scroll.x != 0.0) {
+            update.update_after_x_scroll(scroll_change.unwrap().x);
         }
-        if scroll_offset_change.y != 0.0 {
+        if scroll_change.map_or(true, |scroll| scroll.y != 0.0) {
             update.update_line_assignment();
         }
         if update.content.dirty_lines.any_dirty() {
             update.update_after_text_edit()
         }
-        self.display_object.set_position(new_position);
     }
 
     /// Update all displayed glyphs.
@@ -205,7 +195,6 @@ impl TextFieldSprites {
                 sprites.selection.clear();
                 sprites.selection = generator.generate(&selection);
             }
-            self.display_object.update();
         }
     }
 

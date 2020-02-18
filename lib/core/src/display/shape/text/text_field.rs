@@ -75,10 +75,10 @@ shared! { TextField
         properties     : TextFieldProperties,
         content        : TextFieldContent,
         cursors        : Cursors,
-        scroll_offset  : Vector2<f32>,
         sprites        : Option<TextFieldSprites>,
         frp            : Option<TextFieldFrp>,
-        display_object : DisplayObjectData,
+        this_object    : DisplayObjectData,
+        content_object : DisplayObjectData,
     }
 
 
@@ -87,12 +87,13 @@ shared! { TextField
     impl {
         /// Scroll text by given offset in pixels.
         pub fn scroll(&mut self, offset:Vector2<f32>) {
-            self.scroll_offset += offset;
+            let position_offset = Vector3::new(-offset.x,-offset.y,0.0);
+            self.content_object.mod_position(|pos| *pos += position_offset);
         }
 
         /// Get current scroll position.
-        pub fn scroll_position(&self) -> Vector2<f32> {
-            self.scroll_offset
+        pub fn scroll_offset(&self) -> Vector2<f32> {
+            -self.content_object.position().xy()
         }
 
         /// Removes all cursors except one which is set and given point.
@@ -110,7 +111,8 @@ shared! { TextField
         /// Jump active cursor to point on the screen.
         pub fn jump_cursor(&mut self, point:Vector2<f32>, selecting:bool) {
             let content        = &mut self.content;
-            let point_on_text  = point + self.scroll_offset;
+            let text_position  = self.content_object.global_position().xy();
+            let point_on_text  = point - text_position;
             let mut navigation = CursorNavigation {content,selecting};
             self.cursors.jump_cursor(&mut navigation,point_on_text);
         }
@@ -175,12 +177,12 @@ shared! { TextField
 
         /// Update underlying Display Object.
         pub fn update(&self) {
-            self.display_object.update()
+            self.this_object.update()
         }
 
         /// Check if given point on screen is inside this TextField.
         pub fn is_inside(&self, point:Vector2<f32>) -> bool {
-            let position = self.display_object.global_position();
+            let position = self.this_object.global_position();
             let size     = self.properties.size;
             let x_range  = position.x ..= (position.x + size.x);
             let y_range  = (position.y - size.y) ..= position.y;
@@ -194,7 +196,7 @@ shared! { TextField
     impl {
         /// Set position of this TextField.
         pub fn set_position(&mut self, position:Vector3<f32>) {
-            self.display_object.set_position(position);
+            self.this_object.set_position(position);
         }
 
         /// Update text field size.
@@ -204,6 +206,9 @@ shared! { TextField
         }
     }
 }
+
+
+// === Construction ===
 
 impl TextField {
     /// Create new empty TextField
@@ -215,7 +220,7 @@ impl TextField {
     pub fn new_with_content(world:&World, initial_content:&str, properties:TextFieldProperties)
     -> Self {
         let data            = TextFieldData::new(initial_content,properties);
-        let display_object  = data.display_object.clone_ref();
+        let display_object  = data.this_object.clone_ref();
         let rc              = Rc::new(RefCell::new(data));
         let weak            = Rc::downgrade(&rc);
         let frp             = TextFieldFrp::new(world,weak.clone_ref());
@@ -235,28 +240,27 @@ impl TextField {
 impl TextFieldData {
     fn new(initial_content:&str, properties:TextFieldProperties) -> Self {
         let logger         = Logger::new("TextField");
-        let display_object = DisplayObjectData::new(logger);
+        let this_object    = DisplayObjectData::new(logger.clone());
+        let content_object = DisplayObjectData::new(logger);
         let content        = TextFieldContent::new(initial_content,&properties);
         let cursors        = default();
-        let scroll_offset  = Vector2::new(0.0, 0.0);
         let sprites        = None;
         let frp            = None;
 
-        Self {properties,content,cursors,scroll_offset,sprites,display_object,frp}
+        this_object.add_child(&content_object);
+        Self {properties,content,cursors,sprites,frp,this_object,content_object}
     }
 
     fn refresh_sprites(&mut self, world:&World) {
         let mut sprites    = self.sprites.take().unwrap_or_else(|| self.create_sprites(world));
-        sprites.update_scroll(self.scroll_offset,&mut self.content,self.properties.size);
+        sprites.update_scroll(self.scroll_offset(),&mut self.content,self.properties.size);
         sprites.update_glyphs(&mut self.content);
         sprites.update_cursor_sprites(&mut self.cursors,&mut self.content);
         self.sprites = Some(sprites)
     }
 
     fn create_sprites(&mut self, world:&World) -> TextFieldSprites {
-        let sprites = TextFieldSprites::new(world,&self.properties);
-        self.display_object.add_child(&sprites);
-        sprites
+        TextFieldSprites::new(world,&self.content_object,&self.properties)
     }
 
     fn write_per_cursor<'a,It>(&mut self, cursor_id_with_text_to_insert:It)
@@ -278,6 +282,6 @@ impl TextFieldData {
 
 impl From<&TextField> for DisplayObjectData {
     fn from(text_fields: &TextField) -> Self {
-        text_fields.rc.borrow().display_object.clone_ref()
+        text_fields.rc.borrow().this_object.clone_ref()
     }
 }
