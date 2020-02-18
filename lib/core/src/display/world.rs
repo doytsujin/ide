@@ -130,11 +130,12 @@ impl WorldData {
         let start_time         = performance.now() as f32;
         let stats_monitor_cp_1 = stats_monitor.clone();
         let stats_monitor_cp_2 = stats_monitor.clone();
+        let fonts              = default();
 
         event_loop.set_on_loop_started  (move || { stats_monitor_cp_1.begin(); });
         event_loop.set_on_loop_finished (move || { stats_monitor_cp_2.end();   });
         Self {scene,scene_dirty,logger,event_loop,performance,start_time,time,display_mode
-             ,update_handle,stats,stats_monitor}
+             ,update_handle,stats,stats_monitor,fonts}
     }
 
 

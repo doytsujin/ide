@@ -139,6 +139,12 @@ impl<T:?Sized> CloneRef for Rc<T> {
     }
 }
 
+impl<T:?Sized> CloneRef for Weak<T> {
+    fn clone_ref(&self) -> Self {
+        self.clone()
+    }
+}
+
 
 
 // ===================

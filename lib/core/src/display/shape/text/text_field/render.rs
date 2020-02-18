@@ -152,13 +152,13 @@ impl TextFieldSprites {
         let new_position         = Vector3::new(scroll_offset.x,scroll_offset.y,0.0);
 
         let mut update = GlyphLinesAssignmentUpdate {assignment,content,view_size,scroll_offset};
-        if self.scroll_offset_change.x != 0.0 {
-            update.update_after_x_scroll(self.this_frame_scroll.x);
+        if scroll_offset_change.x != 0.0 {
+            update.update_after_x_scroll(scroll_offset_change.x);
         }
-        if self.scroll_offset_change.y != 0.0 {
+        if scroll_offset_change.y != 0.0 {
             update.update_line_assignment();
         }
-        if content.dirty_lines.any_dirty() {
+        if update.content.dirty_lines.any_dirty() {
             update.update_after_text_edit()
         }
         self.display_object.set_position(new_position);

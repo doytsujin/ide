@@ -389,6 +389,8 @@ mod test {
     use crate::display::shape::text::text_field::content::TextFieldContent;
     use crate::display::shape::text::text_field::TextFieldProperties;
 
+    use nalgebra::Vector2;
+    use nalgebra::Vector4;
     use wasm_bindgen_test::wasm_bindgen_test;
     use wasm_bindgen_test::wasm_bindgen_test_configure;
 
@@ -416,7 +418,7 @@ mod test {
         expected_positions.insert(DocEnd,    vec![(2,9)]);
 
         let mut fonts      = FontRegistry::new();
-        let properties     = TextFieldProperties::default(&mut fonts);
+        let properties     = mock_properties(&mut fonts);
         let mut content    = TextFieldContent::new(text,&properties);
         let mut navigation = CursorNavigation {
             content: &mut content,
@@ -444,7 +446,7 @@ mod test {
         let new_position      = TextLocation {line:1,column:10};
 
         let mut fonts      = FontRegistry::new();
-        let properties     = TextFieldProperties::default(&mut fonts);
+        let properties     = mock_properties(&mut fonts);
         let mut content    = TextFieldContent::new(text,&properties);
         let mut navigation = CursorNavigation {
             content: &mut content,
@@ -465,7 +467,7 @@ mod test {
         let new_loc         = TextLocation {line:0,column:9};
 
         let mut fonts      = FontRegistry::new();
-        let properties     = TextFieldProperties::default(&mut fonts);
+        let properties     = mock_properties(&mut fonts);
         let mut content    = TextFieldContent::new(text,&properties);
         let mut navigation = CursorNavigation {
             content: &mut content,
@@ -504,5 +506,14 @@ mod test {
         cursors.merge_overlapping_cursors();
 
         assert_eq!(expected_cursors, cursors.cursors);
+    }
+
+    fn mock_properties(fonts:&mut FontRegistry) -> TextFieldProperties {
+        TextFieldProperties {
+            font : fonts.get_or_load_embedded_font("DejaVuSansMono").unwrap(),
+            text_size: 10.0,
+            base_color: Vector4::new(0.0,0.0,0.0,1.0),
+            size: Vector2::new(100.0, 100.0),
+        }
     }
 }

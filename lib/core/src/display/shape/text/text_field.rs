@@ -19,9 +19,7 @@ use crate::display::shape::text::text_field::location::TextLocation;
 use crate::display::shape::text::text_field::location::TextLocationChange;
 use crate::display::shape::text::text_field::frp::TextFieldFrp;
 use crate::display::shape::text::glyph::font::FontHandle;
-use crate::display::shape::text::glyph::font::FontRegistry;
 use crate::display::shape::text::text_field::render::TextFieldSprites;
-use crate::display::shape::text::text_field::render::assignment::GlyphLinesAssignmentUpdate;
 use crate::display::world::World;
 
 use nalgebra::Vector2;
@@ -112,8 +110,7 @@ shared! { TextField
         /// Jump active cursor to point on the screen.
         pub fn jump_cursor(&mut self, point:Vector2<f32>, selecting:bool) {
             let content        = &mut self.content;
-            let text_position  = self.rendered.display_object.global_position();
-            let point_on_text  = point - text_position.xy();
+            let point_on_text  = point + self.scroll_offset;
             let mut navigation = CursorNavigation {content,selecting};
             self.cursors.jump_cursor(&mut navigation,point_on_text);
         }
@@ -131,8 +128,6 @@ shared! { TextField
         /// described in `TextChange` structure.
         pub fn apply_change(&mut self, change:TextChange) {
             self.content.apply_change(change);
-            self.assignment_update().update_after_text_edit();
-            self.rendered.update_glyphs(&mut self.content);
         }
 
         /// Get the selected text.
@@ -158,9 +153,6 @@ shared! { TextField
                 let cursor_with_line = cursor_ids.iter().map(|cursor_id| (*cursor_id,text));
                 self.write_per_cursor(cursor_with_line);
             };
-            self.assignment_update().update_after_text_edit();
-            self.rendered.update_glyphs(&mut self.content);
-            self.rendered.update_cursor_sprites(&self.cursors, &mut self.content);
         }
 
         /// Remove all text selected by all cursors.
@@ -222,12 +214,17 @@ impl TextField {
     /// Create new TextField with predefined content.
     pub fn new_with_content(world:&World, initial_content:&str, properties:TextFieldProperties)
     -> Self {
-        let data = TextFieldData::new(world,initial_content,properties);
-        let rc   = Rc::new(RefCell::new(data));
-        let frp  = TextFieldFrp::new(world,Rc::downgrade(&rc));
-        with(rc.borrow_mut(), move |mut data| {
-            data.frp = Some(frp);
-        });
+        let data            = TextFieldData::new(initial_content,properties);
+        let display_object  = data.display_object.clone_ref();
+        let rc              = Rc::new(RefCell::new(data));
+        let weak            = Rc::downgrade(&rc);
+        let frp             = TextFieldFrp::new(world,weak.clone_ref());
+        rc.borrow_mut().frp = Some(frp);
+        display_object.set_on_render(enclose!((world,weak) move || {
+            if let Some(rc) = weak.upgrade() {
+                rc.borrow_mut().refresh_sprites(&world);
+            }
+        }));
         Self{rc}
     }
 }
@@ -236,24 +233,30 @@ impl TextField {
 // === Private ===
 
 impl TextFieldData {
-    fn new(world:&World, initial_content:&str, properties:TextFieldProperties) -> Self {
+    fn new(initial_content:&str, properties:TextFieldProperties) -> Self {
         let logger         = Logger::new("TextField");
         let display_object = DisplayObjectData::new(logger);
         let content        = TextFieldContent::new(initial_content,&properties);
-        let cursors        = Cursors::default();
-        let rendered       = None;
+        let cursors        = default();
+        let scroll_offset  = Vector2::new(0.0, 0.0);
+        let sprites        = None;
         let frp            = None;
-        display_object.add_child(rendered.display_object.clone_ref());
 
-        Self {properties,content,cursors,rendered,display_object,frp}.initialize()
+        Self {properties,content,cursors,scroll_offset,sprites,display_object,frp}
     }
 
-    fn refresh_sprites(&mut self) {
-        if let Some(sprites) = &mut self.sprites {
-            sprites.update_scroll(self.scroll_offset,&mut self.content,self.properties.size);
-            sprites.update_glyphs(&mut self.content);
-            sprites.update_cursor_sprites(&mut self.cursors,&mut self.content);
-        }
+    fn refresh_sprites(&mut self, world:&World) {
+        let mut sprites    = self.sprites.take().unwrap_or_else(|| self.create_sprites(world));
+        sprites.update_scroll(self.scroll_offset,&mut self.content,self.properties.size);
+        sprites.update_glyphs(&mut self.content);
+        sprites.update_cursor_sprites(&mut self.cursors,&mut self.content);
+        self.sprites = Some(sprites)
+    }
+
+    fn create_sprites(&mut self, world:&World) -> TextFieldSprites {
+        let sprites = TextFieldSprites::new(world,&self.properties);
+        self.display_object.add_child(&sprites);
+        sprites
     }
 
     fn write_per_cursor<'a,It>(&mut self, cursor_id_with_text_to_insert:It)
