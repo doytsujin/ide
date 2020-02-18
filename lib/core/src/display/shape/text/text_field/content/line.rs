@@ -68,6 +68,12 @@ impl Line {
         self.char_x_positions.clear();
         &mut self.chars
     }
+
+    /// Clear all currently cached char x positions (e.g. due to change font or text size in
+    /// TextField).
+    pub fn invalidate_char_x_positions(&mut self) {
+        self.char_x_positions.clear();
+    }
 }
 
 

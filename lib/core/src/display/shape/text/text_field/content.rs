@@ -260,6 +260,18 @@ impl TextFieldContent {
         let index    = is_valid.and_option_from(|| Some(index as usize));
         index.map(move |i| self.line(i))
     }
+
+    /// Update all the content metadata according to new TextField properties.
+    ///
+    /// The metadata include the line's baseline start point, position of characters etc. The
+    /// function argument are the only properties whose change requires metadata update.
+    pub fn set_properties(&mut self, text_size:f32, font:FontHandle) {
+        self.line_height = text_size;
+        self.font        = font;
+        for line in &mut self.lines {
+            line.invalidate_char_x_positions();
+        }
+    }
 }
 
 // === Implementing Changes ===

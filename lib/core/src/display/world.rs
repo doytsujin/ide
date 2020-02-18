@@ -17,6 +17,8 @@ use crate::debug::stats::Stats;
 use crate::display::object::*;
 use crate::display::render::*;
 use crate::display::scene::Scene;
+use crate::display::shape::text::glyph::font::FontRegistry;
+use crate::display::shape::text::glyph::font::FontHandle;
 use crate::display::symbol::Symbol;
 use crate::system::web;
 
@@ -54,6 +56,7 @@ pub struct WorldData {
     pub update_handle : Option<CallbackHandle>,
     pub stats         : Stats,
     pub stats_monitor : StatsMonitor,
+    pub fonts         : FontRegistry,
 }
 
 
@@ -233,6 +236,11 @@ impl World {
 
     pub fn scene(&self) -> Scene {
         self.rc.borrow().scene.clone()
+    }
+
+    /// Get render font info from given name, or load it from the embedded font data.
+    pub fn get_or_load_embedded_font(&self, name:&str) -> Option<FontHandle> {
+        self.rc.borrow_mut().fonts.get_or_load_embedded_font(name)
     }
 
     fn init_composer(&self) {

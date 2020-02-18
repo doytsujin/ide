@@ -34,6 +34,8 @@ use nalgebra::Vector4;
 // === TextComponent ===
 // =====================
 
+// === Properties ===
+
 /// A display properties of TextField.
 #[derive(Debug)]
 pub struct TextFieldProperties {
@@ -51,15 +53,18 @@ impl TextFieldProperties {
     const DEFAULT_FONT_FACE:&'static str = "DejaVuSansMono";
 
     /// A default set of properties.
-    pub fn default(fonts:&mut FontRegistry) -> Self {
+    pub fn default(world:&World) -> Self {
         TextFieldProperties {
-            font      : fonts.get_or_load_embedded_font(Self::DEFAULT_FONT_FACE).unwrap(),
+            font      : world.get_or_load_embedded_font(Self::DEFAULT_FONT_FACE).unwrap(),
             text_size : 16.0,
             base_color: Vector4::new(1.0, 1.0, 1.0, 1.0),
             size      : Vector2::new(100.0,100.0),
         }
     }
 }
+
+
+// === Data declaration ===
 
 shared! { TextField
 
@@ -69,37 +74,27 @@ shared! { TextField
     /// commits.
     #[derive(Debug)]
     pub struct TextFieldData {
-        properties       : TextFieldProperties,
-        content          : TextFieldContent,
-        cursors          : Cursors,
-        rendered         : TextFieldSprites,
-        display_object   : DisplayObjectData,
-        frp              : Option<TextFieldFrp>,
+        properties     : TextFieldProperties,
+        content        : TextFieldContent,
+        cursors        : Cursors,
+        scroll_offset  : Vector2<f32>,
+        sprites        : Option<TextFieldSprites>,
+        frp            : Option<TextFieldFrp>,
+        display_object : DisplayObjectData,
     }
 
-    impl {
-        /// Set position of this TextField.
-        pub fn set_position(&mut self, position:Vector3<f32>) {
-            self.display_object.set_position(position);
-        }
 
+// === Main Operations ===
+
+    impl {
         /// Scroll text by given offset in pixels.
         pub fn scroll(&mut self, offset:Vector2<f32>) {
-            let position_change = -Vector3::new(offset.x,offset.y,0.0);
-            self.rendered.display_object.mod_position(|pos| *pos += position_change );
-            let mut update = self.assignment_update();
-            if offset.x != 0.0 {
-                update.update_after_x_scroll(offset.x);
-            }
-            if offset.y != 0.0 {
-                update.update_line_assignment();
-            }
-            self.rendered.update_glyphs(&mut self.content);
+            self.scroll_offset += offset;
         }
 
         /// Get current scroll position.
         pub fn scroll_position(&self) -> Vector2<f32> {
-            self.rendered.display_object.position().xy()
+            self.scroll_offset
         }
 
         /// Removes all cursors except one which is set and given point.
@@ -121,7 +116,6 @@ shared! { TextField
             let point_on_text  = point - text_position.xy();
             let mut navigation = CursorNavigation {content,selecting};
             self.cursors.jump_cursor(&mut navigation,point_on_text);
-            self.rendered.update_cursor_sprites(&self.cursors, &mut self.content);
         }
 
         /// Move all cursors by given step.
@@ -129,7 +123,6 @@ shared! { TextField
             let content        = &mut self.content;
             let mut navigation = CursorNavigation {content,selecting};
             self.cursors.navigate_all_cursors(&mut navigation,step);
-            self.rendered.update_cursor_sprites(&self.cursors, &mut self.content);
         }
 
         /// Make change in text content.
@@ -202,15 +195,28 @@ shared! { TextField
             x_range.contains(&point.x) && y_range.contains(&point.y)
         }
     }
+
+
+// === Property Setters ===
+
+    impl {
+        /// Set position of this TextField.
+        pub fn set_position(&mut self, position:Vector3<f32>) {
+            self.display_object.set_position(position);
+        }
+
+        /// Update text field size.
+        pub fn set_size(&mut self, size:Vector2<f32>) {
+            self.properties.size = size;
+            self.sprites = None;
+        }
+    }
 }
-
-
-// === Constructor ===
 
 impl TextField {
     /// Create new empty TextField
-    pub fn new(world:&World, properties:TextFieldProperties) -> Self {
-        Self::new_with_content(world,"",properties)
+    pub fn new(world:&World) -> Self {
+        Self::new_with_content(world,"",TextFieldProperties::default(world))
     }
 
     /// Create new TextField with predefined content.
@@ -235,26 +241,18 @@ impl TextFieldData {
         let display_object = DisplayObjectData::new(logger);
         let content        = TextFieldContent::new(initial_content,&properties);
         let cursors        = Cursors::default();
-        let rendered       = TextFieldSprites::new(world,&properties);
+        let rendered       = None;
         let frp            = None;
         display_object.add_child(rendered.display_object.clone_ref());
 
         Self {properties,content,cursors,rendered,display_object,frp}.initialize()
     }
 
-    fn initialize(mut self) -> Self{
-        self.assignment_update().update_line_assignment();
-        self.rendered.update_glyphs(&mut self.content);
-        self.rendered.update_cursor_sprites(&self.cursors, &mut self.content);
-        self
-    }
-
-    fn assignment_update(&mut self) -> GlyphLinesAssignmentUpdate {
-        GlyphLinesAssignmentUpdate {
-            content       : &mut self.content,
-            assignment    : &mut self.rendered.assignment,
-            scroll_offset : -self.rendered.display_object.position().xy(),
-            view_size     : self.properties.size,
+    fn refresh_sprites(&mut self) {
+        if let Some(sprites) = &mut self.sprites {
+            sprites.update_scroll(self.scroll_offset,&mut self.content,self.properties.size);
+            sprites.update_glyphs(&mut self.content);
+            sprites.update_cursor_sprites(&mut self.cursors,&mut self.content);
         }
     }
 

@@ -247,13 +247,17 @@ impl<'a> CursorNavigation<'a> {
 #[derive(Debug)]
 pub struct Cursors {
     /// All cursors' positions.
-    pub cursors : Vec<Cursor>,
+    pub cursors: Vec<Cursor>,
+    /// Dirty flag - true if there was a change in cursor and selection quantity and positions
+    /// since last frame.
+    pub dirty: bool,
 }
 
 impl Default for Cursors {
     fn default() -> Self {
         Cursors {
             cursors : vec![Cursor::new(TextLocation::at_document_begin())],
+            dirty   : true,
         }
     }
 }
@@ -262,11 +266,13 @@ impl Cursors {
     /// Removes all current cursors and replace them with single cursor without any selection.
     pub fn set_cursor(&mut self, position: TextLocation) {
         self.cursors = vec![Cursor::new(position)];
+        self.dirty   = true;
     }
 
     /// Remove all cursors except the active one.
     pub fn remove_additional_cursors(&mut self) {
         self.cursors.drain(0..self.cursors.len()-1);
+        self.dirty = true;
     }
 
     /// Return the active (last added) cursor. Even on multiline edit some operations are applied
@@ -279,6 +285,7 @@ impl Cursors {
     pub fn add_cursor(&mut self, position: TextLocation) {
         self.cursors.push(Cursor::new(position));
         self.merge_overlapping_cursors();
+        self.dirty = true;
     }
 
     /// Do the navigation step of all cursors.
@@ -286,7 +293,7 @@ impl Cursors {
     /// If after this operation some of the cursors occupies the same position, or their selected
     /// area overlap, they are irreversibly merged.
     pub fn navigate_all_cursors(&mut self, navigation:&mut CursorNavigation, step:Step) {
-        self.navigate_cursors(navigation,step,|_| true)
+        self.navigate_cursors(navigation,step,|_| true);
     }
 
     /// Do the navigation step of all cursors satisfying given predicate.
@@ -299,6 +306,7 @@ impl Cursors {
         let filtered = self.cursors.iter_mut().filter(|c| predicate(c));
         filtered.for_each(|cursor| navigation.move_cursor(cursor, step));
         self.merge_overlapping_cursors();
+        self.dirty = true;
     }
 
     /// Jump the active (last) cursor to the nearest location from given point of the screen.
@@ -308,6 +316,7 @@ impl Cursors {
     pub fn jump_cursor(&mut self, navigation:&mut CursorNavigation, point:Vector2<f32>) {
         navigation.move_cursor_to_point(self.cursors.last_mut().unwrap(),point);
         self.merge_overlapping_cursors();
+        self.dirty = true;
     }
 
     /// Returns cursor indices sorted by cursors' position in text.
@@ -365,7 +374,8 @@ impl Cursors {
 
     #[cfg(test)]
     fn mock(cursors:Vec<Cursor>) -> Self {
-        Cursors{cursors}
+        let dirty = true;
+        Cursors{cursors,dirty}
     }
 }
 

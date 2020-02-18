@@ -11,7 +11,7 @@ use crate::display::shape::text::glyph::system::GlyphSystem;
 use crate::display::shape::text::text_field::content::TextFieldContent;
 use crate::display::shape::text::text_field::cursor::Cursor;
 use crate::display::shape::text::text_field::cursor::Cursors;
-use crate::display::shape::text::text_field::render::assignment::GlyphLinesAssignment;
+use crate::display::shape::text::text_field::render::assignment::{GlyphLinesAssignment, GlyphLinesAssignmentUpdate};
 use crate::display::shape::text::text_field::render::assignment::LineFragment;
 use crate::display::shape::text::text_field::render::selection::SelectionSpritesGenerator;
 use crate::display::shape::text::text_field::TextFieldProperties;
@@ -143,6 +143,27 @@ impl From<&TextFieldSprites> for DisplayObjectData {
 // === Update ===
 
 impl TextFieldSprites {
+    /// Update scroll position of displayed text.
+    pub fn update_scroll
+    (&mut self, scroll_offset:Vector2<f32>, content:&mut TextFieldContent, view_size:Vector2<f32>) {
+        let assignment           = &mut self.assignment;
+        let old_scroll_offset    = -self.display_object.position().xy();
+        let scroll_offset_change = scroll_offset - old_scroll_offset;
+        let new_position         = Vector3::new(scroll_offset.x,scroll_offset.y,0.0);
+
+        let mut update = GlyphLinesAssignmentUpdate {assignment,content,view_size,scroll_offset};
+        if self.scroll_offset_change.x != 0.0 {
+            update.update_after_x_scroll(self.this_frame_scroll.x);
+        }
+        if self.scroll_offset_change.y != 0.0 {
+            update.update_line_assignment();
+        }
+        if content.dirty_lines.any_dirty() {
+            update.update_after_text_edit()
+        }
+        self.display_object.set_position(new_position);
+    }
+
     /// Update all displayed glyphs.
     pub fn update_glyphs(&mut self, content:&mut TextFieldContent) {
         let glyph_lines       = self.glyph_lines.iter_mut().enumerate();
@@ -150,37 +171,42 @@ impl TextFieldSprites {
         let dirty_lines       = std::mem::take(&mut content.dirty_lines);
         let dirty_glyph_lines = std::mem::take(&mut self.assignment.dirty_glyph_lines);
 
-        for ((index,glyph_line),assignment) in lines_assignment {
-            let is_glyph_line_dirty = dirty_glyph_lines.contains(&index);
-            let assigned_line       = assignment.as_ref().map(|fragment| fragment.line_index);
-            let is_line_dirty       = assigned_line.map_or(false, |l| dirty_lines.is_dirty(l));
-            if is_glyph_line_dirty || is_line_dirty {
-                match assignment {
-                    Some(fragment) => Self::update_glyph_line(glyph_line,fragment,content),
-                    None           => glyph_line.replace_text("".chars()),
+        if dirty_lines.any_dirty() || !dirty_glyph_lines.is_empty() {
+            for ((index,glyph_line),assignment) in lines_assignment {
+                let is_glyph_line_dirty = dirty_glyph_lines.contains(&index);
+                let assigned_line       = assignment.as_ref().map(|fragment| fragment.line_index);
+                let is_line_dirty       = assigned_line.map_or(false, |l| dirty_lines.is_dirty(l));
+                if is_glyph_line_dirty || is_line_dirty {
+                    match assignment {
+                        Some(fragment) => Self::update_glyph_line(glyph_line,fragment,content),
+                        None           => glyph_line.replace_text("".chars()),
+                    }
                 }
             }
         }
-        self.display_object.update();
     }
 
     /// Update all displayed cursors with their selections.
-    pub fn update_cursor_sprites(&mut self, cursors:&Cursors, content:&mut TextFieldContent) {
-        let cursor_system = &self.cursor_system;
-        self.cursors.resize_with(cursors.cursors.len(),|| Self::new_cursor_sprites(cursor_system));
-        for (sprites,cursor) in self.cursors.iter_mut().zip(cursors.cursors.iter()) {
-            let position = Cursor::render_position(&cursor.position,content);
-            sprites.cursor.set_position(Vector3::new(position.x,position.y,0.0));
-            sprites.cursor.size().set(Vector2::new(2.0,self.line_height));
+    pub fn update_cursor_sprites(&mut self, cursors:&mut Cursors, content:&mut TextFieldContent) {
+        let dirty = std::mem::take(&mut cursors.dirty);
+        if dirty {
+            let cursor_system = &self.cursor_system;
+            let cursor_count  = cursors.cursors.len();
+            self.cursors.resize_with(cursor_count,|| Self::new_cursor_sprites(cursor_system));
+            for (sprites,cursor) in self.cursors.iter_mut().zip(cursors.cursors.iter()) {
+                let position = Cursor::render_position(&cursor.position,content);
+                sprites.cursor.set_position(Vector3::new(position.x,position.y,0.0));
+                sprites.cursor.size().set(Vector2::new(2.0,self.line_height));
 
-            let selection = cursor.selection_range();
-            let line_height   = self.line_height;
-            let system        = &self.selection_system;
-            let mut generator = SelectionSpritesGenerator {content,line_height,system};
-            sprites.selection.clear();
-            sprites.selection = generator.generate(&selection);
+                let selection = cursor.selection_range();
+                let line_height   = self.line_height;
+                let system        = &self.selection_system;
+                let mut generator = SelectionSpritesGenerator {content,line_height,system};
+                sprites.selection.clear();
+                sprites.selection = generator.generate(&selection);
+            }
+            self.display_object.update();
         }
-        self.display_object.update();
     }
 
     fn update_glyph_line
