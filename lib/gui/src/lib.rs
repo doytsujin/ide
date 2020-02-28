@@ -22,6 +22,7 @@ pub mod easing_animator;
 pub mod glyph_system;
 pub mod shapes;
 pub mod sprite_system;
+pub mod sprite_system_no_sprites;
 pub mod text_field;
 pub mod text_typing;
 pub mod css3d_system;
