@@ -281,6 +281,7 @@ pub struct FrpInputs {
     pub press_node_port                : frp::Source<(NodeId,span_tree::Crumbs)>,
     pub remove_edge                    : frp::Source<EdgeId>,
     pub select_node                    : frp::Source<NodeId>,
+    pub remove_node                    : frp::Source<NodeId>,
     pub set_node_expression            : frp::Source<(NodeId,Expression)>,
     pub set_node_position              : frp::Source<(NodeId,Position)>,
     pub set_visualization_data         : frp::Source<NodeId>,
@@ -301,6 +302,7 @@ impl FrpInputs {
             def press_node_port                = source();
             def remove_edge                    = source();
             def select_node                    = source();
+            def remove_node                    = source();
             def set_node_expression            = source();
             def set_node_position              = source();
             def set_visualization_data         = source();
@@ -311,7 +313,7 @@ impl FrpInputs {
         let commands = Commands::new(&network);
         Self {commands,remove_edge,press_node_port,set_visualization_data
              ,connect_detached_edges_to_node,connect_edge_source,connect_edge_target
-             ,set_node_position,select_node,translate_selected_nodes,set_node_expression
+             ,set_node_position,select_node,remove_node,translate_selected_nodes,set_node_expression
              ,connect_nodes,deselect_all_nodes,cycle_visualization,set_visualization}
     }
 }
@@ -370,21 +372,28 @@ impl UnsealedFrpOutputs {
     pub fn seal(&self) -> FrpOutputs {
         let network = self.network.clone_ref();
         frp::extend! { network
-            def node_added = self.node_added.sampler();
-            def edge_added = self.edge_added.sampler();
+            def node_added         = self.node_added.sampler();
+            def edge_added         = self.edge_added.sampler();
+            def node_removed       = source().into();
+            def nodes_connected    = source().into();
+            def nodes_disconnected = source().into();
         }
         let node_position = self.node_position.clone_ref().into();
-        FrpOutputs {network,node_added,edge_added,node_position}
+        FrpOutputs {network,node_added,edge_added,node_removed,nodes_connected,nodes_disconnected,
+            node_position}
     }
 }
 
 
 #[derive(Debug,Clone,CloneRef)]
 pub struct FrpOutputs {
-    network           : frp::Network,
-    pub node_added    : frp::Sampler<NodeId>,
-    pub edge_added    : frp::Sampler<EdgeId>,
-    pub node_position : frp::Stream<(NodeId,Position)>,
+    network                : frp::Network,
+    pub node_added         : frp::Sampler<NodeId>,
+    pub edge_added         : frp::Sampler<EdgeId>,
+    pub node_removed       : frp::Stream<NodeId>,
+    pub nodes_connected    : frp::Stream<EdgeId>,
+    pub nodes_disconnected : frp::Stream<EdgeId>,
+    pub node_position      : frp::Stream<(NodeId,Position)>,
 }
 
 
